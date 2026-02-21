@@ -21,3 +21,4 @@ EXPOSE 1234
 # 5. Start the daemon AND the server
 # 'lms server start' runs in the foreground, keeping the container alive
 CMD ["/bin/bash", "-c", "lms daemon up && lms server start --port 1234 --cors=true"]
+LABEL org.opencontainers.image.source="https://github.com/raine-works/lmstudio-docker"

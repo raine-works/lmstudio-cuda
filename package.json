@@ -1,0 +1,8 @@
+{
+  "name": "lmstudio-docker",
+  "version": "1.0.0",
+  "scripts": {
+    "auth:docker": "rm -rf ~/.docker && echo $(gh auth token) | docker login ghcr.io -u $(gh api user | jq -r '.login') --password-stdin",
+    "build": "bash build.sh"
+  }
+}
