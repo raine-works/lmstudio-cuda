@@ -11,7 +11,7 @@ else
 fi
 
 docker buildx build \
-    -f packages/${PACKAGE_NAME}/Dockerfile \
+    -f ./Dockerfile \
     --platform linux/amd64,linux/arm64 \
     -t ghcr.io/${GITHUB_USERNAME}/${PACKAGE_NAME}:latest \
     -t ghcr.io/${GITHUB_USERNAME}/${PACKAGE_NAME}:${VERSION} \
