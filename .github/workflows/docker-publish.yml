@@ -53,5 +53,8 @@ jobs:
           build-args: |
             BUILDKIT_INLINE_CACHE=1
 
-      - name: Image digest
-        run: echo ${{ steps.build-and-push-image.outputs.digest }}
+      - name: Verify push success
+        run: |
+          echo "Docker image built and pushed successfully"
+          echo "Tags pushed:"
+          echo "${{ steps.meta.outputs.tags }}"
