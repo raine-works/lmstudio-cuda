@@ -1,10 +1,10 @@
 {
-  "name": "lmstudio-docker",
+  "name": "lmstudio-cuda",
   "version": "1.0.0",
   "scripts": {
     "auth:docker": "rm -rf ~/.docker && echo $(gh auth token) | docker login ghcr.io -u $(gh api user | jq -r '.login') --password-stdin",
     "build": "bash build.sh",
-    "build:local": "docker build -t lmstudio-docker:latest .",
-    "push:local": "docker push lmstudio-docker:latest"
+    "build:local": "docker build -t lmstudio-cuda:latest .",
+    "push:local": "docker push lmstudio-cuda:latest"
   }
 }

@@ -1,370 +1,697 @@
-# LM Studio Agents Documentation
+# LM Studio Agents in Docker
+
+This guide covers running and deploying LM Studio Agents within the `lmstudio-cuda` Docker container.
 
 ## Overview
 
-LM Studio Agents represent a powerful framework for creating, managing, and deploying AI-powered assistants and automated workflows. These agents leverage the capabilities of large language models to perform complex tasks, interact with users, and integrate with various systems.
+LM Studio Agents provide a framework for creating AI-powered assistants that run locally on your machine. The `lmstudio-cuda` container runs a headless LM Studio API server (not a web interface), which agents can connect to via the local API at port 1234.
 
-## What are LM Studio Agents?
+When deployed in the CUDA-enabled Docker container, agents can leverage GPU acceleration for faster inference while maintaining the flexibility of containerized deployment.
 
-LM Studio Agents are intelligent software entities that can:
-- Process natural language inputs
-- Execute complex reasoning and problem-solving
-- Interact with external APIs and services
-- Learn from interactions and improve over time
-- Operate across multiple platforms and environments
+## Prerequisites
 
-## Architecture
+- Docker installed with NVIDIA Container Toolkit support
+- Access to `lmstudio-cuda` image: `ghcr.io/raine-works/lmstudio-cuda:latest`
+- LM Studio CLI (`lms`) - pre-installed in the container
+- Local LLM models loaded into LM Studio (see [Load Models](#load-models))
+
+## Quick Start
+
+### Run the Container
+
+```bash
+docker run -d \
+  --name lmstudio-agents \
+  --gpus all \
+  -p 22:22 \
+  -p 1234:1234 \
+  -v ~/lmstudio-data:/root/.lmstudio \
+  ghcr.io/raine-works/lmstudio-cuda:latest
+```
+
+### Access via SSH (Terminal)
+
+```bash
+ssh root@localhost -p 22
+# Password: root
+```
+
+### Initialize Agent Project
+
+Inside the container via SSH:
+
+```bash
+lms agent init my-agent
+cd my-agent
+```
+
+This creates an agent project with:
+- `agent.yaml` - Configuration file
+- `prompts/` - Directory for prompt templates
+- `tools/` - Custom tool implementations (optional)
+- `README.md` - Project documentation
+
+## Agent Architecture
 
 ### Core Components
 
-1. **Agent Runtime**
-   - The execution environment for agents
-   - Manages agent lifecycles and state
-   - Handles communication protocols
+1. **Agent Runtime** - Manages execution state and conversation history
+2. **Prompt Engine** - Handles prompt generation, templates, and versioning
+3. **Memory System** - Short-term context window + long-term memory storage
+4. **Tool Executor** - Runs custom functions and API calls
+5. **Model Connector** - Interfaces with local LLMs via LM Studio API
 
-2. **Prompt Engine**
-   - Generates and optimizes prompts for LLM interactions
-   - Manages prompt templates and variations
-   - Implements prompt chaining and composition
+### Supported Agent Types
 
-3. **Memory System**
-   - Short-term memory for current conversations
-   - Long-term memory for persistent knowledge
-   - Context management and retrieval
-
-4. **Tool Integration Layer**
-   - API connectors and adapters
-   - External service integration
-   - Custom function execution
-
-5. **Execution Engine**
-   - Task scheduling and management
-   - Workflow orchestration
-   - Error handling and recovery
-
-## Agent Types
-
-### 1. Conversational Agents
-- Designed for natural language interactions
-- Maintain conversation context and history
-- Support multi-turn dialogues
-- Example: Customer service chatbots, virtual assistants
-
-### 2. Task-Oriented Agents
-- Execute specific workflows and processes
-- Follow structured instruction sets
-- Handle complex multi-step operations
-- Example: Order processing, data analysis
-
-### 3. Knowledge Agents
-- Specialized in information retrieval and synthesis
-- Can answer questions and provide explanations
-- Access and organize knowledge bases
-- Example: Research assistants, educational tools
-
-### 4. Creative Agents
-- Generate creative content and ideas
-- Support brainstorming and ideation
-- Produce text, code, or multimedia content
-- Example: Content writers, code generators, design assistants
-
-## Getting Started
-
-### Prerequisites
-- LM Studio CLI installed
-- Valid API keys for LLM providers
-- Docker environment (for containerized deployment)
-- Basic understanding of prompt engineering
-
-### Quick Setup
-
-```bash
-# Initialize a new agent project
-lms agent init my-agent
-
-# Create agent configuration
-lms agent create --name my-agent --type conversational
-
-# Deploy the agent
-lms agent deploy my-agent
-```
+| Type | Use Case | Best For |
+|------|----------|----------|
+| `conversational` | Chat-based interactions | Customer support, companionship |
+| `task-oriented` | Workflow automation | Data processing, form filling |
+| `knowledge` | Information retrieval | Research assistants, Q&A bots |
+| `creative` | Content generation | Writing, coding, brainstorming |
 
 ## Configuration
 
-### Agent Settings
+### Agent Configuration (agent.yaml)
 
 ```yaml
-agent:
-  name: "My Assistant"
-  type: "conversational"
-  version: "1.0.0"
-  description: "A helpful assistant for everyday tasks"
-  
+version: "1.0"
+name: "My Assistant"
+type: "conversational"
+
 model:
-  provider: "openai"
-  model: "gpt-4-turbo"
+  provider: "local"  # Uses LM Studio's local models
+  model_id: "meta-llama/Meta-Llama-3-8B-Instruct"
+  
+parameters:
   temperature: 0.7
   max_tokens: 2048
+  top_p: 0.9
   
 memory:
-  type: "persistent"
-  retention_days: 30
-  context_window: 4096
-
+  type: "context_window"
+  retention_size: 1000  # tokens
+  
 tools:
-  - name: "web_search"
+  - name: "file_reader"
+    path: "./tools/file_reader.js"
     enabled: true
-  - name: "calculator"
-    enabled: true
+    
+logging:
+  level: "info"  # debug, info, warn, error
 ```
 
 ### Environment Variables
 
-| Variable | Description | Default |
+| Variable | Description | Example |
 |----------|-------------|---------|
-| `AGENT_NAME` | Name of the agent | `default-agent` |
-| `MODEL_PROVIDER` | LLM provider (openai, anthropic, etc.) | `openai` |
-| `API_KEY` | API key for LLM provider | `""` |
-| `MEMORY_TYPE` | Memory persistence type | `persistent` |
+| `LM_API_URL` | LM Studio API endpoint | `http://localhost:1234/v1` |
+| `LM_API_KEY` | API authentication token | `sk-xxx` |
+| `AGENT_DATA_DIR` | Agent data persistence path | `/root/.lmstudio/agents` |
 
-## Creating New Agents
+## Loading Models
 
-### Using the CLI
+The container includes the LM Studio CLI (`lms`) which manages the headless server. Based on [LM Studio's headless mode documentation](https://lmstudio.ai/docs/developer/core/headless), models can be loaded on-demand via JIT (Just-In-Time) loading.
+
+### Option 1: Download and Load Models via CLI
+
+SSH into the container and use these commands:
 
 ```bash
-# Create a new agent with specific configuration
-lms agent create \
-  --name "Research Assistant" \
-  --type "knowledge" \
-  --model "gpt-4-turbo" \
-  --description "An assistant for academic research tasks"
+# List available downloaded models
+lms models list
 
-# Configure tools for the agent
-lms agent tool add web_search --enabled true
-lms agent tool add database_query --enabled true
+# Download a new model from Hugging Face
+lms download meta-llama/Meta-Llama-3-8B-Instruct
+
+# Start the headless server (runs on port 1234 by default)
+lms server start --port 1234 --cors --bind 0.0.0.0 &
 ```
 
-### Programmatic Creation
+With JIT loading enabled, models are automatically loaded into memory when you make inference calls to `/v1/chat/completions` or other endpoints.
 
-```javascript
-const { Agent } = require('@lmstudio/agents');
+### Option 2: Pre-load Models via Volume Mount
 
-const myAgent = new Agent({
-  name: "Code Assistant",
-  type: "task-oriented",
-  model: {
-    provider: "openai",
-    model: "gpt-4-turbo"
-  },
-  memory: {
-    type: "ephemeral",
-    contextWindow: 2048
-  }
-});
+If you have models already downloaded on your host:
 
-// Add tools
-myAgent.addTool('code_execution', { enabled: true });
-myAgent.addTool('file_operations', { enabled: true });
+```bash
+# On host, ensure models exist in ~/.lmstudio/models
+ls ~/.lmstudio/models
 
-await myAgent.deploy();
+# Run container with mounted model data
+docker run -d \
+  --name lmstudio-agents \
+  --gpus all \
+  -p 22:22 \
+  -p 1234:1234 \
+  ghcr.io/raine-works/lmstudio-cuda:latest
 ```
 
-## Agent Lifecycle
+### Model Storage Location
 
-### 1. Creation
-- Define agent parameters and configuration
-- Set up initial memory and knowledge base
-- Configure tool integrations
+Models are stored in `/root/.lmstudio/models` inside the container. Use volume mounts to persist or preload models.
 
-### 2. Training
-- Provide training data and examples
-- Fine-tune model behavior
-- Validate performance metrics
+## Development Workflow
 
-### 3. Deployment
-- Package agent for execution
-- Configure runtime environment
-- Make agent accessible via API or interface
+### 1. Initialize Project
+```bash
+lms agent init research-assistant
+cd research-assistant
+```
 
-### 4. Operation
-- Process user inputs and requests
-- Execute tasks and workflows
-- Maintain conversation state
+### 2. Edit Configuration
+Edit `agent.yaml` to configure your agent's behavior.
 
-### 5. Monitoring
-- Track performance and usage
-- Analyze interaction patterns
-- Identify optimization opportunities
+### 3. Create Prompts
+Add prompt templates in the `prompts/` directory:
 
-## Tools and Integrations
+```yaml
+# prompts/system.yaml
+name: "System Prompt"
+description: "The assistant's persona"
 
-### Available Tools
+content: |
+  You are a helpful research assistant with expertise in science and technology.
+  Use clear, concise language. Cite sources when available.
 
-1. **Web Search**
-   - Access to search engines
-   - Real-time information retrieval
-   - Document summarization
+# prompts/user_template.yaml
+name: "User Input Template"
+content: |
+  User Query: {{user_input}}
+  
+  Please respond based on your system prompt.
+```
 
-2. **Calculator**
-   - Mathematical operations
-   - Scientific calculations
-   - Data analysis
-
-3. **Database Access**
-   - SQL query execution
-   - Data retrieval and manipulation
-   - Schema exploration
-
-4. **Code Execution**
-   - Safe code sandboxing
-   - Language support (Python, JavaScript, etc.)
-   - Result interpretation
-
-5. **File Operations**
-   - Document processing
-   - File creation and modification
-   - Data export capabilities
-
-### Adding Custom Tools
+### 4. Add Custom Tools (Optional)
+Create tool scripts in the `tools/` directory:
 
 ```javascript
-// Example custom tool implementation
-const myCustomTool = {
-  name: "weather_lookup",
-  description: "Get current weather information for a location",
+// tools/calculator.js
+module.exports = {
+  name: "calculator",
+  description: "Perform mathematical calculations",
   execute: async (params) => {
-    const { location } = params;
-    // Implementation here
-    return weatherData;
+    const { expression } = params;
+    try {
+      // Note: Use safe evaluation for production
+      return { result: eval(expression) };
+    } catch (error) {
+      return { error: "Invalid calculation" };
+    }
   }
 };
-
-agent.addTool(myCustomTool);
 ```
 
-## Best Practices
-
-### Prompt Engineering
-- Use clear and specific instructions
-- Provide examples of expected outputs
-- Implement role-playing to define agent behavior
-- Test different prompt variations for optimal results
-
-### Error Handling
-- Implement graceful degradation when tools fail
-- Provide meaningful error messages to users
-- Log errors for debugging and improvement
-- Include fallback mechanisms
-
-### Performance Optimization
-- Cache frequently accessed information
-- Optimize memory usage for long conversations
-- Implement efficient tool calling patterns
-- Monitor API usage and costs
-
-### Security Considerations
-- Validate all inputs to prevent prompt injection
-- Implement proper authentication for API access
-- Sanitize outputs to prevent data leakage
-- Limit tool capabilities to necessary functions only
-
-## Deployment Options
-
-### Local Deployment
+### 5. Test Locally
 ```bash
-lms agent deploy --local my-agent
+lms agent test --message "Hello, how are you?" ./agent.yaml
 ```
 
-### Containerized Deployment
+### 6. Deploy to Docker
+
+First, ensure the agent has the correct API configuration and the server is running:
+
+```yaml
+# agent.yaml
+model:
+  provider: "local"
+  model_id: "meta-llama/Meta-Llama-3-8B-Instruct"
+  
+api:
+  url: "http://localhost:1234/v1"  # LM Studio API endpoint
+```
+
+```yaml
+# agent.yaml
+model:
+  provider: "local"
+  model_id: "meta-llama/Meta-Llama-3-8B-Instruct"
+  
+api:
+  url: "http://localhost:1234/v1"  # LM Studio API endpoint
+```
+
+Then build and run:
+
+```bash
+# Build the image with your agent
+docker build -f Agentfile . -t my-agent:latest
+
+# Run with data persistence
+docker run -d \
+  --name my-agent-container \
+  --gpus all \
+  -p 8000:8000 \
+  -v ./data:/app/data \
+  my-agent:latest
+```
+
+## Agentfile (Docker Build)
+
+Create an `Agentfile` in your agent project:
+
 ```dockerfile
-FROM ghcr.io/raine-works/lmstudio-docker:latest
-COPY ./agent-config.yaml /config/
-CMD ["lms", "agent", "run", "/config/agent-config.yaml"]
+# Build stage
+FROM ghcr.io/raine-works/lmstudio-cuda:latest AS builder
+
+WORKDIR /build
+COPY . .
+
+RUN lms agent build -o /output/agent.tar.gz
+
+# Runtime stage
+FROM ghcr.io/raine-works/lmstudio-cuda:latest
+
+WORKDIR /app
+COPY --from=builder /output/agent.tar.gz ./agent.tar.gz
+
+EXPOSE 8000
+
+CMD ["lms", "agent", "run", "./agent.tar.gz", "--port", "8000"]
 ```
 
-### Cloud Deployment
-```bash
-lms agent deploy --cloud my-agent --region us-west-1
-```
+## GPU Optimization
 
-## API Reference
+The CUDA-enabled container supports:
 
-### Agent Management Endpoints
+| Feature | Configuration |
+|---------|---------------|
+| GPU Memory | Auto-managed by LM Studio |
+| Quantization | 4-bit, 6-bit, 8-bit GGUF formats |
+| Batch Size | Adjust via `max_tokens` parameter |
+| Parallel Inference | Enabled automatically when available |
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/agents` | GET | List all agents |
-| `/agents/{id}` | GET | Get agent details |
-| `/agents` | POST | Create new agent |
-| `/agents/{id}` | PUT | Update agent configuration |
-| `/agents/{id}` | DELETE | Remove agent |
-
-### Agent Interaction Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/agents/{id}/interact` | POST | Send message to agent |
-| `/agents/{id}/history` | GET | Get conversation history |
-| `/agents/{id}/status` | GET | Get current agent status |
+Optimize performance by:
+1. Using quantized models (GGUF Q4_K_M or Q5_K_M recommended)
+2. Setting appropriate `max_tokens` based on GPU VRAM
+3. Using `temperature: 0.0` for deterministic outputs
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Agent Not Responding**
-   - Check if all required tools are enabled
-   - Verify model provider API connectivity
-   - Review agent configuration settings
+**Agent not starting**
+- Verify LM Studio daemon is running: `lms daemon status`
+- Check model is loaded: `lms server models list`
 
-2. **Performance Problems**
-   - Monitor memory usage and optimize context length
-   - Implement caching for repeated operations
-   - Review tool execution times
+**GPU not detected**
+- Ensure `--gpus all` flag is present in docker run
+- Verify NVIDIA drivers: `nvidia-smi` (inside container)
 
-3. **Integration Failures**
-   - Validate API credentials and permissions
-   - Check network connectivity to external services
-   - Verify tool interface compatibility
+**Out of memory errors**
+- Reduce `max_tokens` in agent configuration
+- Use smaller quantized models
+- Close other GPU-intensive processes
 
-### Debugging Tools
+**Connection refused**
+- Confirm port 1234 is exposed and mapped: `-p 1234:1234`
+- Ensure the LM Studio daemon is running inside container: `lms daemon status`
+- Check container logs for startup errors
+
+### Debug Mode
 
 ```bash
-# Enable verbose logging
-lms agent debug --verbose my-agent
+# Inside container - verbose agent execution
+lms agent run ./agent.yaml --debug --log-level trace
 
-# Test agent response
-lms agent test --message "Hello, how are you?" my-agent
+# View LM Studio server logs
+lms server logs -f
 
-# View agent logs
-lms agent logs my-agent
+# Check if API is responding (inside container)
+curl http://localhost:1234/v1/models
 ```
 
-## Future Roadmap
+## Accessing LM Studio API from Host Machine
 
-### Upcoming Features
-- Multi-agent collaboration systems
-- Advanced memory and knowledge management
-- Enhanced tool marketplace
-- Improved training and fine-tuning capabilities
-- Cross-platform deployment support
+The container exposes the LM Studio API on port 1234. You can access it directly from your host:
 
-### Community Contributions
-- Open-source tool development
-- Plugin architecture for custom integrations
-- Documentation improvements and examples
-- Community-driven agent templates
+```bash
+# Test API endpoint (list models)
+curl http://localhost:1234/v1/models
 
-## Support and Resources
+# Make a chat completion request
+curl http://localhost:1234/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "temperature": 0.7
+  }'
 
-### Documentation
-- [LM Studio Official Docs](https://lmstudio.ai/docs)
-- [Agent API Reference](https://lmstudio.ai/agents/api)
-- [Prompt Engineering Guide](https://lmstudio.ai/prompts)
+# Using from local scripts/python
+python -c "
+import requests
+print(requests.get('http://localhost:1234/v1/models').json())
+"
+```
 
-### Community
-- GitHub Discussions: [lmstudio-agents](https://github.com/lmstudio-agents)
-- Discord Server: Join our community for support and updates
-- Stack Overflow: Tag questions with `lmstudio-agents`
+## Best Practices
 
-### Contact
-For enterprise support or custom agent development, please contact the LM Studio team at support@lmstudio.ai.
+1. **Model Selection**: Use quantized models (GGUF) for efficient GPU usage
+2. **Context Management**: Keep conversation history concise to maintain performance
+3. **Error Handling**: Implement try/catch in custom tools with fallback responses
+4. **Persistence**: Mount volumes for `~/.lmstudio` to preserve agent state and model data
+5. **Security**: Never expose the LM Studio API port without authentication
+6. **Headless Mode**: The container does NOT include a web interface - use SSH for terminal access or the API for programmatic access
+
+## Examples
+
+### Example 1: Research Assistant Agent
+
+A knowledge-focused agent that helps with academic research and information retrieval.
+
+```yaml
+# agent.yaml
+version: "1.0"
+name: "Research Assistant"
+type: "knowledge"
+
+model:
+  provider: "local"
+  model_id: "meta-llama/Meta-Llama-3-8B-Instruct"
+  
+parameters:
+  temperature: 0.3
+  max_tokens: 1500
+  top_p: 0.9
+  
+memory:
+  type: "context_window"
+  retention_size: 2000
+
+system_prompt: |
+  You are a research assistant AI with expertise in scientific literature review,
+  academic writing, and information synthesis. Always cite sources when available.
+  Format responses with clear sections and bullet points for readability.
+
+tools:
+  - name: "search_papers"
+    path: "./tools/search_papers.js"
+    enabled: true
+```
+
+```javascript
+// tools/search_papers.js
+module.exports = {
+  name: "search_papers",
+  description: "Search for academic papers on a given topic",
+  execute: async (params) => {
+    const { query, limit = 5 } = params;
+    
+    // In production, integrate with APIs like Semantic Scholar or arXiv
+    return {
+      results: [
+        { title: `Research on ${query}`, year: 2024, abstract: "Sample abstract..." }
+      ]
+    };
+  }
+};
+```
+
+### Example 2: Code Assistant Agent
+
+A task-oriented agent specialized for programming tasks with GPU acceleration.
+
+```yaml
+# agent.yaml
+version: "1.0"
+name: "Code Assistant"
+type: "task-oriented"
+
+model:
+  provider: "local"
+  model_id: "meta-llama/Meta-Llama-3-70B-Instruct"  # Higher capability for code
+  
+parameters:
+  temperature: 0.2
+  max_tokens: 4096
+  
+memory:
+  type: "context_window"
+  retention_size: 3000
+
+tools:
+  - name: "execute_code"
+    path: "./tools/execute_code.js"
+    enabled: true
+  - name: "read_file"
+    path: "./tools/read_file.js"
+    enabled: true
+```
+
+```javascript
+// tools/execute_code.js
+module.exports = {
+  name: "execute_code",
+  description: "Execute code in a safe sandboxed environment",
+  execute: async (params) => {
+    const { language, code, input = "" } = params;
+    
+    try {
+      // Safe code execution logic
+      if (language === "python") {
+        return { output: "Code executed successfully" };
+      }
+      return { output: `Unsupported language: ${language}` };
+    } catch (error) {
+      return { error: error.message };
+    }
+  }
+};
+```
+
+### Example 3: Conversational Companion Agent
+
+A conversational agent with personality and memory for engaging interactions.
+
+```yaml
+# agent.yaml
+version: "1.0"
+name: "Companion"
+type: "conversational"
+
+model:
+  provider: "local"
+  model_id: "mistralai/Mistral-7B-Instruct-v0.3"
+  
+parameters:
+  temperature: 0.8
+  max_tokens: 2048
+  top_p: 0.95
+  
+memory:
+  type: "context_window"
+  retention_size: 1500
+
+system_prompt: |
+  You are a friendly, empathetic conversational companion. Be warm, engaging,
+  and maintain consistent personality traits across the conversation.
+  
+personality:
+  tone: "friendly and supportive"
+  interests: ["technology", "science", "arts"]
+```
+
+## GPU Optimization Guide
+
+The CUDA-enabled container supports:
+
+| Feature | Configuration |
+|---------|---------------|
+| GPU Memory | Auto-managed by LM Studio |
+| Quantization | 4-bit, 6-bit, 8-bit GGUF formats |
+| Batch Size | Adjust via `max_tokens` parameter |
+| Parallel Inference | Enabled automatically when available |
+
+### VRAM-Based Configuration
+
+| GPU VRAM | Recommended Model | max_tokens | Batch Size |
+|----------|-------------------|------------|------------|
+| 4 GB | Q4_K_M quantized | 1024-2048 | 1 |
+| 6 GB | Q5_K_M quantized | 2048-3072 | 1-2 |
+| 8 GB | Q5_K_M or Q8_0 | 3072-4096 | 2-4 |
+| 12+ GB | Q8_0 or FP16 | 4096-8192 | 4+ |
+
+### Performance Tuning
+
+```yaml
+# agent.yaml with optimized settings for 8GB GPU
+version: "1.0"
+name: "Optimized Assistant"
+
+model:
+  provider: "local"
+  model_id: "mistralai/Mistral-7B-Instruct-v0.3-Q5_K_M"  # Quantized
+
+parameters:
+  temperature: 0.7
+  max_tokens: 3072      # Adjust based on VRAM
+  top_p: 0.9            # Sampling parameter
+  frequency_penalty: 0.1
+  presence_penalty: 0.1
+  
+memory:
+  type: "context_window"
+  retention_size: 1500
+
+# GPU-specific optimizations
+gpu:
+  n_gpu_layers: 32      # Number of layers to offload to GPU
+  flash_attn: true      # Enable FlashAttention for faster inference
+```
+
+### Monitoring GPU Usage
+
+```bash
+# Inside container, monitor GPU usage
+watch -n 1 nvidia-smi
+
+# Check available VRAM
+nvidia-smi --query-gpu=memory.total,memory.free --format=csv
+
+# Monitor LM Studio server resources
+lms server stats
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Agent not starting**
+- Verify LM Studio daemon is running: `lms daemon status`
+- Check model is loaded: `lms server models list`
+- Ensure sufficient GPU memory for the selected model
+
+**GPU not detected**
+```bash
+# Inside container, verify:
+nvidia-smi                      # Should show your GPU
+ls /dev/nvidia*                 # Should list NVIDIA devices
+lspci | grep -i nvidia          # Check PCI device detection
+```
+
+**Out of memory errors**
+1. Reduce `max_tokens` in agent configuration
+2. Use smaller quantized models (Q4_K_M before Q5_K_M)
+3. Enable GPU layer offloading selectively
+
+```yaml
+gpu:
+  n_gpu_layers: 8  # Reduce from 32 for memory-constrained GPUs
+```
+
+**Slow inference**
+1. Increase `n_gpu_layers` to offload more layers to GPU
+2. Use FlashAttention if supported by your model
+3. Ensure CUDA drivers are up to date
+
+### Debug Mode
+
+```bash
+# Inside container - verbose agent execution
+lms agent run ./agent.yaml --debug --log-level trace
+
+# Monitor LM Studio server logs
+lms server logs -f
+
+# Check container health
+docker ps | grep lmstudio-cuda
+```
+
+## Advanced Deployment
+
+### Multi-Agent Orchestration
+
+Deploy multiple agents with different specialized roles:
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+services:
+  code-agent:
+    image: ghcr.io/raine-works/lmstudio-cuda:latest
+    ports:
+      - "1235:1234"
+    volumes:
+      - ./code-agent:/root/.lmstudio
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    
+  research-agent:
+    image: ghcr.io/raine-works/lmstudio-cuda:latest
+    ports:
+      - "1236:1234"
+    volumes:
+      - ./research-agent:/root/.lmstudio
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+```
+
+### Persistent Data Volumes
+
+```bash
+# Create named volumes for agent data
+docker volume create lmstudio_agents_data
+
+# Run with persistent storage
+docker run -d \
+  --name lmstudio-agents \
+  --gpus all \
+  -p 22:22 \
+  -p 1234:1234 \
+  -v lmstudio_agents_data:/root/.lmstudio \
+  ghcr.io/raine-works/lmstudio-cuda:latest
+```
+
+### Backup and Restore
+
+```bash
+# Backup agent data
+docker run --rm \
+  -v lmstudio_agents_data:/data \
+  -v $(pwd):/backup \
+  alpine tar czf /backup/agent-backup.tar.gz -C /data .
+
+# Restore agent data
+docker run --rm \
+  -v lmstudio_agents_data:/data \
+  -v $(pwd):/backup \
+  alpine tar xzf /backup/agent-backup.tar.gz -C /data
+```
+
+---
+
+---
+
+## Headless Mode Reference
+
+Based on [LM Studio's headless mode documentation](https://lmstudio.ai/docs/developer/core/headless):
+
+| Feature | Description |
+|---------|-------------|
+| `lms server start` | Starts the LLM server without GUI (runs on port 1234) |
+| `lms models list` | Lists all downloaded models |
+| `lms download <model>` | Downloads a model from Hugging Face |
+| `--cors --bind 0.0.0.0` | Enable CORS and bind to all interfaces |
+
+### Just-In-Time (JIT) Model Loading
+
+When using the LM Studio server in headless mode:
+
+- Calls to `/v1/models` return all downloaded models
+- Inference endpoints load models on demand into memory
+- Models auto-unload after a period of inactivity
+
+This allows efficient resource usage - you can have many models downloaded and only load the ones you're actively using.
+
+*For general LM Studio documentation, visit https://lmstudio.ai/docs*

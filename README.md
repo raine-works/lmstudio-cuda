@@ -1,26 +1,15 @@
-# LM Studio Docker
+# LM Studio CUDA
 
-This project provides a complete Dockerized environment for running LM Studio, a desktop application for running and developing large language models locally. The container includes all necessary components to run LM Studio with GPU support, SSH access, and pre-configured CLI tools.
+This project provides a complete Dockerized environment for running LM Studio with NVIDIA CUDA support. The container includes all necessary components to run LM Studio with GPU acceleration, SSH access, and pre-configured CLI tools.
 
 ## Features
-- Run LM Studio in a containerized environment with full GPU support
-- Access LM Studio through SSH terminal or web interface  
+- Run LM Studio in headless mode (GUI-less) with full NVIDIA CUDA GPU support
+- Access the LM Studio API via SSH terminal or directly from host machine
 - Built-in SSH server for remote access and debugging
 - Pre-configured with LM Studio CLI tools and dependencies
 - Multi-architecture support (AMD64, ARM64)
 - Automated CI/CD pipeline with GitHub Actions
 - Semantic versioning for Docker images
-- Comprehensive documentation and troubleshooting guides
-
-Docker image for running LM Studio, a desktop application for running and developing large language models locally.
-
-## Features
-
-- Run LM Studio in a containerized environment
-- Access LM Studio through SSH terminal or web interface
-- GPU support via NVIDIA CUDA
-- Built-in SSH server for remote access
-- Pre-configured with LM Studio CLI tools
 
 ## Prerequisites
 
@@ -34,11 +23,11 @@ Docker image for running LM Studio, a desktop application for running and develo
 
 ```bash
 docker run -d \
-  --name lmstudio \
+  --name lmstudio-cuda \
   --gpus all \
   -p 22:22 \
   -p 1234:1234 \
-  ghcr.io/raine-works/lmstudio-docker:latest
+  ghcr.io/raine-works/lmstudio-cuda:latest
 ```
 
 ### Using Docker Compose
@@ -49,8 +38,8 @@ Create a `docker-compose.yml` file:
 version: '3.8'
 services:
   lmstudio:
-    image: ghcr.io/raine-works/lmstudio-docker:latest
-    container_name: lmstudio
+    image: ghcr.io/raine-works/lmstudio-cuda:latest
+    container_name: lmstudio-cuda
     ports:
       - "22:22"   # SSH access
       - "1234:1234" # LM Studio API
@@ -80,11 +69,28 @@ ssh root@localhost -p 22
 # Default password is 'root'
 ```
 
-### LM Studio Web Interface
+### Accessing the LM Studio API
 
-Access the LM Studio web interface at:
+The container runs a headless LM Studio API server on port 1234. You can interact with it via:
+
+**From inside the container (via SSH):**
+```bash
+ssh root@localhost -p 22
+# Then use lms commands:
+lms ls                # List downloaded models
+lms get <model-id>        # Download a model
+lms server start --port 1234   # Start the headless server
 ```
-http://localhost:1234
+
+**From your host machine (after running container):**
+```bash
+# Test API endpoint (list models)
+curl http://localhost:1234/v1/models
+
+# Make a chat completion request
+curl http://localhost:1234/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"meta-llama/Meta-Llama-3-8B-Instruct","messages":[{"role":"user","content":"Hello!"}]}'
 ```
 
 ## Environment Variables
@@ -96,7 +102,7 @@ The container can be configured using environment variables:
 ## Ports
 
 - `22` - SSH access
-- `1234` - LM Studio API server
+- `1234` - LM Studio API server (headless, no web interface)
 
 ## Building Locally
 
@@ -124,7 +130,7 @@ This project includes a GitHub Actions workflow that automatically builds and pu
 ### Workflow Details
 
 The workflow:
-1. Triggers on pushes to `main` branch or tags matching `v*`
+1. Triggers on pushes to `master` branch or tags matching `v*`
 2. Builds the Docker image for both AMD64 and ARM64 architectures
 3. Pushes the image to GitHub Container Registry (GHCR)
 4. Creates version tags based on semantic versioning
@@ -142,7 +148,7 @@ If you encounter a 403 Forbidden error when pushing to GHCR, check the following
 1. **Repository Permissions**: Ensure your repository allows package publishing
 2. **Token Permissions**: Verify that `GITHUB_TOKEN` has `packages: write` permission
 3. **Repository Visibility**: Make sure the repository settings allow package publishing
-4. **Owner/Repository Name**: Confirm the repository name matches `raine-works/lmstudio-docker`
+4. **Owner/Repository Name**: Confirm the repository name matches `raine-works/lmstudio-cuda`
 
 ### Common Solutions
 
@@ -151,6 +157,15 @@ If you encounter a 403 Forbidden error when pushing to GHCR, check the following
 - If using a private repository, verify organization-level package permissions
 - Try re-running the workflow after a few minutes (sometimes temporary auth issues resolve)
 
+## Headless Mode
+
+This container runs LM Studio in headless mode (GUI-less operation) as documented on the [LM Studio docs](https://lmstudio.ai/docs/developer/core/headless). Key features:
+
+- Server starts automatically via entrypoint script with `lms server start`
+- Models can be loaded on-demand via JIT (Just-In-Time) loading
+- No web interface - use SSH for terminal access or the REST API for programmatic access
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+```

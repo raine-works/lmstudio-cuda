@@ -40,4 +40,4 @@ RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 
 # Label for easier identification in GHCR
-LABEL org.opencontainers.image.source="https://github.com/raine-works/lmstudio-docker"
+LABEL org.opencontainers.image.source="https://github.com/raine-works/lmstudio-cuda"
